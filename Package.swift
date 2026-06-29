@@ -11,6 +11,11 @@ let package = Package(
     ],
     dependencies: [],
     targets: [
-        .target(name: "PerfectCRUD", dependencies: [])
+        .target(name: "PerfectCRUD", dependencies: []),
+        .testTarget(
+            name: "PerfectCRUDTests",
+            dependencies: ["PerfectCRUD"],
+            path: "Tests/PerfectCRUDTests"
+        ),
     ]
 )
