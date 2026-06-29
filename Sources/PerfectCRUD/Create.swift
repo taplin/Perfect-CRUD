@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct TableCreatePolicy: OptionSet {
+public struct TableCreatePolicy: OptionSet, Sendable {
 	public let rawValue: Int
 	public init(rawValue r: Int) { rawValue = r }
 	public static let shallow = TableCreatePolicy(rawValue: 1)
@@ -80,7 +80,7 @@ public struct PrimaryKey<Value: Codable>: PrimaryKeyWrapper, Codable {
 	}
 }
 
-public enum ForeignKeyAction {
+public enum ForeignKeyAction: Sendable {
 	case ignore, restrict, setNull, setDefault, cascade
 }
 
@@ -88,24 +88,24 @@ public protocol ForeignKeyActionProvider {
 	static var action: ForeignKeyAction { get }
 }
 
-public struct ForeignKeyActionIgnore: ForeignKeyActionProvider {
-	static public var action = ForeignKeyAction.ignore
+public struct ForeignKeyActionIgnore: ForeignKeyActionProvider, Sendable {
+	static public let action = ForeignKeyAction.ignore
 }
 
-public struct ForeignKeyActionRestrict: ForeignKeyActionProvider {
-	static public var action = ForeignKeyAction.restrict
+public struct ForeignKeyActionRestrict: ForeignKeyActionProvider, Sendable {
+	static public let action = ForeignKeyAction.restrict
 }
 
-public struct ForeignKeyActionSetNull: ForeignKeyActionProvider {
-	static public var action = ForeignKeyAction.setNull
+public struct ForeignKeyActionSetNull: ForeignKeyActionProvider, Sendable {
+	static public let action = ForeignKeyAction.setNull
 }
 
-public struct ForeignKeyActionSetDefault: ForeignKeyActionProvider {
-	static public var action = ForeignKeyAction.setDefault
+public struct ForeignKeyActionSetDefault: ForeignKeyActionProvider, Sendable {
+	static public let action = ForeignKeyAction.setDefault
 }
 
-public struct ForeignKeyActionCascade: ForeignKeyActionProvider {
-	static public var action = ForeignKeyAction.cascade
+public struct ForeignKeyActionCascade: ForeignKeyActionProvider, Sendable {
+	static public let action = ForeignKeyAction.cascade
 }
 
 public let ignore = ForeignKeyActionIgnore()
@@ -153,7 +153,7 @@ public struct ForeignKey<Table: Codable, DeleteAction: ForeignKeyActionProvider,
 	}
 }
 
-private var tableStructureCache: [String:TableStructure] = [:]
+nonisolated(unsafe) private var tableStructureCache: [String:TableStructure] = [:]
 
 // for tests
 public func CRUDClearTableStructureCache() {
