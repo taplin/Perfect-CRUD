@@ -28,6 +28,7 @@ CRUD support is built directly into each of these database connector packages.
 			* <a href="#create-policy">Policy</a>
 		* <a href="#table">Table</a>
 		* <a href="#sql">SQL</a>
+		* <a href="#dynamic-select">Dynamic Select</a>
 	* <a href="#table-1">Table</a>
 		* <a href="#index">Index</a>
 	* <a href="#join">Join</a>
@@ -261,6 +262,53 @@ Example Usage:
 ```swift
 try db.sql("SELECT * FROM mytable WHERE id = 2", TestTable1.self)
 ```
+
+<a name="dynamic-select"></a>
+#### Dynamic Select
+
+CRUD's primary API remains the type-safe `Codable`/KeyPath query builder. For
+runtime-driven use cases such as template engines, admin tools, query builders,
+and legacy adapters, CRUD also exposes a dynamic read API that keeps the same
+connector quoting, binding, logging, and execution machinery.
+
+```swift
+let result = try db.select(DynamicQuery(
+	table: "products",
+	fields: ["id", "sku", "name"],
+	predicates: [
+		DynamicPredicate(
+			field: "active",
+			comparison: .equal,
+			value: .int(1)
+		),
+		DynamicPredicate(
+			field: "name",
+			comparison: .contains,
+			value: .string("jacket")
+		),
+	],
+	orderings: [
+		DynamicOrdering(field: "name")
+	],
+	limit: 25
+))
+
+for row in result.rows {
+	print(row["sku"] ?? .null)
+}
+```
+
+The dynamic API is intentionally a sibling of the typed API, not a replacement
+for it. Runtime table and column names are still quoted through the active SQL
+generator, and runtime values are still bound instead of interpolated.
+
+Connectors support dynamic rows by implementing:
+
+```swift
+func nextDynamicRow() throws -> DynamicRow?
+```
+
+The default implementation throws, so connectors opt in explicitly.
 
 <a name="table-1"></a>
 ### Table

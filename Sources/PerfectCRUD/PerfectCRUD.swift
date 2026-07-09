@@ -53,6 +53,13 @@ public protocol SQLExeDelegate {
 	func bind(_ bindings: Bindings, skip: Int) throws
 	func hasNext() throws -> Bool
 	func next<A: CodingKey>() throws -> KeyedDecodingContainer<A>?
+	func nextDynamicRow() throws -> DynamicRow?
+}
+
+public extension SQLExeDelegate {
+	func nextDynamicRow() throws -> DynamicRow? {
+		throw CRUDSQLExeError("Dynamic rows are not supported by this connector.")
+	}
 }
 
 public protocol DatabaseConfigurationProtocol {

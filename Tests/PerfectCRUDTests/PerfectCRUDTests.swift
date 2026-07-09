@@ -38,6 +38,32 @@ private struct StubExeDelegate: SQLExeDelegate {
 	func next<A: CodingKey>() throws -> KeyedDecodingContainer<A>? { nil }
 }
 
+private final class DynamicStubExeDelegate: SQLExeDelegate, @unchecked Sendable {
+	let rows: [DynamicRow]
+	var index = 0
+	var boundValues: Bindings = []
+
+	init(rows: [DynamicRow]) {
+		self.rows = rows
+	}
+
+	func bind(_ bindings: Bindings, skip: Int) throws {
+		boundValues = Array(bindings.dropFirst(skip))
+	}
+
+	func hasNext() throws -> Bool {
+		index < rows.count
+	}
+
+	func next<A: CodingKey>() throws -> KeyedDecodingContainer<A>? { nil }
+
+	func nextDynamicRow() throws -> DynamicRow? {
+		guard index < rows.count else { return nil }
+		defer { index += 1 }
+		return rows[index]
+	}
+}
+
 private final class StubConfig: DatabaseConfigurationProtocol, @unchecked Sendable {
 	var capturedSQL: [String] = []
 
@@ -50,6 +76,34 @@ private final class StubConfig: DatabaseConfigurationProtocol, @unchecked Sendab
 
 	required init(url: String? = nil, name: String? = nil, host: String? = nil,
 				  port: Int? = nil, user: String? = nil, pass: String? = nil) throws {}
+}
+
+private final class DynamicStubConfig: DatabaseConfigurationProtocol, @unchecked Sendable {
+	let generator = StubGenDelegate()
+	let executor: DynamicStubExeDelegate
+	var capturedSQL: String?
+
+	init(rows: [DynamicRow]) {
+		executor = DynamicStubExeDelegate(rows: rows)
+	}
+
+	var sqlGenDelegate: SQLGenDelegate { generator }
+
+	func sqlExeDelegate(forSQL sql: String) throws -> SQLExeDelegate {
+		capturedSQL = sql
+		return executor
+	}
+
+	required convenience init(
+		url: String? = nil,
+		name: String? = nil,
+		host: String? = nil,
+		port: Int? = nil,
+		user: String? = nil,
+		pass: String? = nil
+	) throws {
+		self.init(rows: [])
+	}
 }
 
 private func makeDB() throws -> (Database<StubConfig>, StubConfig) {
@@ -256,5 +310,76 @@ struct PerfectCRUDTests {
 		#expect(sql.contains("DELETE"))
 		#expect(sql.contains("\"User\""))
 		#expect(sql.contains("WHERE"))
+	}
+
+	// MARK: Dynamic queries
+
+	@Test func dynamicRowLookupIsCaseInsensitive() {
+		let row = DynamicRow(["DisplayName": .string("Ada")])
+		#expect(row["displayname"] == .string("Ada"))
+		#expect(row["DISPLAYNAME"] == .string("Ada"))
+	}
+
+	@Test func dynamicSelectCompilesAndReturnsRows() throws {
+		let expectedRow = DynamicRow([
+			"id": .int(7),
+			"name": .string("Alice"),
+		])
+		let config = DynamicStubConfig(rows: [expectedRow])
+		let database = Database(configuration: config)
+		let query = DynamicQuery(
+			table: "users",
+			fields: ["id", "name"],
+			predicates: [
+				DynamicPredicate(field: "store_id", comparison: .equal, value: .string("KOI")),
+				DynamicPredicate(field: "featured", comparison: .contains, value: .string("sale")),
+			],
+			orderings: [DynamicOrdering(field: "name", descending: true)],
+			limit: 10,
+			offset: 2
+		)
+
+		let result = try database.select(query)
+
+		#expect(result.rows == [expectedRow])
+		#expect(result.statement == """
+		SELECT "id", "name" FROM "users" WHERE "store_id" = ? AND "featured" LIKE ? ORDER BY "name" DESC LIMIT 10 OFFSET 2
+		""")
+		#expect(config.executor.boundValues.count == 2)
+		guard case .string("KOI") = config.executor.boundValues[0].1 else {
+			Issue.record("Expected equality value to be bound.")
+			return
+		}
+		guard case .string("%sale%") = config.executor.boundValues[1].1 else {
+			Issue.record("Expected contains value to be wildcard-bound.")
+			return
+		}
+	}
+
+	@Test func dynamicNullPredicatesDoNotCreateBindings() throws {
+		let config = DynamicStubConfig(rows: [])
+		let database = Database(configuration: config)
+		let result = try database.select(DynamicQuery(
+			table: "users",
+			predicates: [
+				DynamicPredicate(field: "deleted_at", comparison: .equal, value: .null),
+			]
+		))
+
+		#expect(result.statement == "SELECT * FROM \"users\" WHERE \"deleted_at\" IS NULL")
+		#expect(config.executor.boundValues.isEmpty)
+	}
+
+	@Test func dynamicOffsetRequiresLimit() throws {
+		let config = DynamicStubConfig(rows: [])
+		let database = Database(configuration: config)
+		do {
+			_ = try database.select(DynamicQuery(table: "users", offset: 2))
+			Issue.record("Expected offset without limit to throw.")
+		} catch let error as CRUDSQLGenError {
+			#expect(error.description.contains("offset requires a limit"))
+		} catch {
+			Issue.record("Unexpected error: \(error)")
+		}
 	}
 }
