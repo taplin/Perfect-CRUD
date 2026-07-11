@@ -54,12 +54,21 @@ public protocol SQLExeDelegate {
 	func hasNext() throws -> Bool
 	func next<A: CodingKey>() throws -> KeyedDecodingContainer<A>?
 	func nextDynamicRow() throws -> DynamicRow?
+	/// Rows affected by the most recently executed non-SELECT statement.
+	/// Not every connector can report this — default 0.
+	func affectedRowCount() -> Int
+	/// The connector-reported auto-generated primary key from the most
+	/// recently executed INSERT, if the connector/table support one.
+	/// Default nil.
+	func lastInsertedID() -> Int64?
 }
 
 public extension SQLExeDelegate {
 	func nextDynamicRow() throws -> DynamicRow? {
 		throw CRUDSQLExeError("Dynamic rows are not supported by this connector.")
 	}
+	func affectedRowCount() -> Int { 0 }
+	func lastInsertedID() -> Int64? { nil }
 }
 
 public protocol DatabaseConfigurationProtocol {
