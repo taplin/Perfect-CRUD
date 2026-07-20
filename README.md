@@ -1,21 +1,46 @@
 # Perfect CRUD [简体中文](README.zh_CN.md)
 
-CRUD is an object-relational mapping (ORM) system for Swift 4+. CRUD takes Swift 4 `Codable` types and maps them to SQL database tables. CRUD can create tables based on `Codable` types and perform inserts and updates of objects in those tables. CRUD can also perform selects and joins of tables, all in a type-safe manner.
+**Requires Swift tools version 6.2, macOS 26+ (`.macOS(.v26)`). Zero external SwiftPM dependencies.**
+
+This fork (`taplin/Perfect-CRUD`, branch `main`) is part of the [Perfect-Resurrection](https://github.com/taplin) effort to modernize the PerfectlySoft Perfect stack for Swift 6. It is **core, foundational infrastructure**: six other resurrected packages in Perfect-Resurrection depend directly on it — [Perfect-MySQL](https://github.com/taplin/Perfect-MySQL), [Perfect-MariaDB](https://github.com/taplin/Perfect-MariaDB), [Perfect-NIO](https://github.com/taplin/Perfect-NIO), [Perfect-PostgreSQL](https://github.com/taplin/Perfect-PostgreSQL), [Perfect-SQLite](https://github.com/taplin/Perfect-SQLite), and [PerfectTemplate](https://github.com/taplin/PerfectTemplate) — and, through those, the Perfect-Lasso interpreter's live FileMaker/MySQL data access. Within the Perfect-Resurrection monorepo, sibling packages consume this one as a local path-dependency rather than the upstream PerfectlySoft tag; if you are working inside that monorepo, point your `Package.swift` at the local path instead of the URLs below.
+
+CRUD is an object-relational mapping (ORM) system for Swift, built on Swift's `Codable` and KeyPath features. CRUD takes `Codable` types and maps them to SQL database tables. CRUD can create tables based on `Codable` types and perform inserts and updates of objects in those tables. CRUD can also perform selects and joins of tables, all in a type-safe manner. The Swift 6 resurrection pass added `Sendable` conformances throughout for strict-concurrency checking (the execution model itself remains fully synchronous — there is no async/await or actor usage in the library) and a new "Dynamic Select" runtime query API (see below) that did not exist in the original PerfectlySoft codebase.
 
 CRUD uses a simple, expressive, and type safe methodology for constructing queries as a series of operations. It is designed to be light-weight and has zero additional dependencies. It uses generics, KeyPaths and Codables to ensure as much misuse as possible is caught at compile time.
 
-Database client library packages can add CRUD support by implementing a few protocols. Support is available for [SQLite](https://github.com/PerfectlySoft/Perfect-SQLite), [Postgres](https://github.com/PerfectlySoft/Perfect-PostgreSQL), and [MySQL](https://github.com/PerfectlySoft/Perfect-MySQL).
+Database client library packages add CRUD support by implementing a few protocols. Within Perfect-Resurrection, that support is implemented by the local forks [Perfect-SQLite](https://github.com/taplin/Perfect-SQLite), [Perfect-PostgreSQL](https://github.com/taplin/Perfect-PostgreSQL), [Perfect-MySQL](https://github.com/taplin/Perfect-MySQL), and [Perfect-MariaDB](https://github.com/taplin/Perfect-MariaDB) — these are Swift 6-migrated forks of the original PerfectlySoft connector packages, not the unmaintained upstream originals.
 
-To use CRUD in your project simply include the database connector of your choice as a dependency in your Package.swift file. For example:
+To add PerfectCRUD itself as a dependency:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/taplin/Perfect-CRUD.git", branch: "main")
+    // or, inside the Perfect-Resurrection monorepo:
+    // .package(path: "../Perfect-CRUD")
+],
+targets: [
+    .target(name: "MyTarget", dependencies: [
+        .product(name: "PerfectCRUD", package: "Perfect-CRUD")
+    ])
+]
+```
+
+Then build and test with the standard SwiftPM commands: `swift build`, `swift test`.
+
+To use CRUD with a specific database, include the connector of your choice as a dependency in your Package.swift file. For example, using the Perfect-Resurrection forks:
 
 ```swift
 // postgres
-.package(url: "https://github.com/PerfectlySoft/Perfect-PostgreSQL.git", from: "3.2.0")
+.package(url: "https://github.com/taplin/Perfect-PostgreSQL.git", branch: "main")
 // mysql
-.package(url: "https://github.com/PerfectlySoft/Perfect-MySQL.git", from: "3.2.0")
+.package(url: "https://github.com/taplin/Perfect-MySQL.git", branch: "main")
+// mariadb
+.package(url: "https://github.com/taplin/Perfect-MariaDB.git", branch: "main")
 // sqlite
-.package(url: "https://github.com/PerfectlySoft/Perfect-SQLite.git", from: "3.1.0")
+.package(url: "https://github.com/taplin/Perfect-SQLite.git", branch: "main")
 ```
+
+The original, unmaintained upstream packages (pre-Swift-6, PerfectlySoft org) are still reachable at `https://github.com/PerfectlySoft/Perfect-{PostgreSQL,MySQL,SQLite}` but are not what this fork or its Perfect-Resurrection siblings build against.
 
 CRUD support is built directly into each of these database connector packages.
 
@@ -56,6 +81,7 @@ CRUD support is built directly into each of these database connector packages.
 	* <a href="#identity">Identity</a>
 * <a href="#error-handling">Error Handling</a>
 * <a href="#logging">Logging</a>
+* <a href="#license">License</a>
 
 <a name="general-usage"></a>
 ## General Usage
@@ -138,6 +164,8 @@ Activity in CRUD is accomplished by obtaining a database connection object and t
 
 Operations are grouped here according to the objects which implement them. Note that many of the type definitions shown below have been abbreviated for simplicity and some functions implemented in extensions have been moved in to keep things in a single block.
 
+Note: several usage examples below use `XCTAssertEqual`/`XCTFail`-style assertions purely for illustration. The package's own test target (`Tests/PerfectCRUDTests`) uses Swift Testing (`import Testing`, `@Test`), not XCTest — if you're copying an example into a test, adapt it to Swift Testing's `#expect`/`#require` macros rather than pasting it verbatim.
+
 <a name="database"></a>
 ### Database
 
@@ -164,9 +192,11 @@ public struct Database<C: DatabaseConfigurationProtocol>: DatabaseProtocol {
 	public init(configuration c: Configuration)
 	public func table<T: Codable>(_ form: T.Type) -> Table<T, Database<C>>
 	public func transaction<T>(_ body: () throws -> T) throws -> T
-	public func create<A: Codable>(_ type: A.Type, 
-		primaryKey: PartialKeyPath<A>? = nil, 
-		policy: TableCreatePolicy = .defaultPolicy) throws -> Create<A, Self>
+	public func create<A: Codable>(_ type: A.Type,
+		policy: TableCreatePolicy = .defaultPolicy) throws -> Table<A, Self>
+	public func create<A: Codable, V: Equatable>(_ type: A.Type,
+		primaryKey: KeyPath<A, V>? = nil,
+		policy: TableCreatePolicy = .defaultPolicy) throws -> Table<A, Self>
 }
 ```
 
@@ -208,11 +238,16 @@ The `create` operation is given a Codable type. It will create a table correspon
 ```swift
 public extension DatabaseProtocol {
 	func create<A: Codable>(
-		_ type: A.Type, 
-		primaryKey: PartialKeyPath<A>? = nil, 
-		policy: TableCreatePolicy = .defaultPolicy) throws -> Create<A, Self>
+		_ type: A.Type,
+		policy: TableCreatePolicy = .defaultPolicy) throws -> Table<A, Self>
+	func create<A: Codable, V: Equatable>(
+		_ type: A.Type,
+		primaryKey: KeyPath<A, V>? = nil,
+		policy: TableCreatePolicy = .defaultPolicy) throws -> Table<A, Self>
 }
 ```
+
+There are two overloads: one with no `primaryKey` parameter, and one generic over the primary key's value type `V` taking a typed `KeyPath<A, V>?`. Both return a `Table<A, Self>`, not a `Create` value — `Create` is used internally to build and execute the `CREATE TABLE` statement, but it is never the type a caller sees.
 
 Example usage:
 
@@ -570,7 +605,7 @@ Joins are not currently supported in updates, inserts, or deletes (cascade delet
 The Join protocol has two functions. The first handles standard two table joins. The second handles junction (three table) joins.
 
 ```swift
-public protocol JoinAble: TableProtocol {
+public protocol Joinable: TableProtocol {
 	// standard join
 	func join<NewType: Codable, KeyType: Equatable>(
 		_ to: KeyPath<OverAllForm, [NewType]?>,
@@ -623,7 +658,7 @@ If a joined table is included in a join but there are no resulting joined object
 A `where` operation introduces a criteria which will be used to filter exactly which objects should be selected, updated, or deleted from the database. Where can only be used when performing a select/count, update, or delete. 
 
 ```swift
-public protocol WhereAble: TableProtocol {
+public protocol Whereable: TableProtocol {
 	func `where`(_ expr: CRUDBooleanExpression) -> Where<OverAllForm, Self>
 }
 ```
@@ -738,7 +773,7 @@ Notice the force-unwraped key path - `\Person.height!`. _This is type-safe_ and 
 An `order` operation introduces an ordering of the over-all resulting objects and/or of the objects selected for a particular join. An order operation should immediately follow either a `table` or a `join`. You may also order over fields with optional types.
 
 ```swift
-public protocol OrderAble: TableProtocol {
+public protocol Orderable: TableProtocol {
 	func order(by: PartialKeyPath<Form>...) -> Ordering<OverAllForm, Self>
 	func order(descending by: PartialKeyPath<Form>...) -> Ordering<OverAllForm, Self>
 }
@@ -779,7 +814,7 @@ let person = try personTable.order(descending: \.height).select().map {$0}
 A `limit` operation can follow a `table`, `join`, or `order` operation. Limit can both apply an upper bound on the number of resulting objects and impose a skip value. For example the first five found records may be skipped and the result set will begin at the sixth row.
 
 ```swift
-public protocol LimitAble: TableProtocol {
+public protocol Limitable: TableProtocol {
 	func limit(_ max: Int, skip: Int) -> Limit<OverAllForm, Self>
 }
 ```
@@ -820,7 +855,7 @@ let query = try db.table(TestTable1.self)
 An `update` operation can be used to replace values in the existing records which match the query. An update will almost always have a `where` operation in the chain, but it is not required. Providing no `where` operation in the chain will match all records. 
 
 ```swift
-public protocol UpdateAble: TableProtocol {
+public protocol Updatable: TableProtocol {
 	func update(_ instance: OverAllForm, setKeys: PartialKeyPath<OverAllForm>, _ rest: PartialKeyPath<OverAllForm>...) throws -> Update<OverAllForm, Self>
 	func update(_ instance: OverAllForm, ignoreKeys: PartialKeyPath<OverAllForm>, _ rest: PartialKeyPath<OverAllForm>...) throws -> Update<OverAllForm, Self>
 	func update(_ instance: OverAllForm) throws -> Update<OverAllForm, Self>
@@ -889,7 +924,7 @@ try table.insert([newOne, newTwo], setKeys: \.id, \.name)
 A `delete` operation is used to remove records from the table which match the query. A delete will almost always have a `where` operation in the chain, but it is not required. Providing no `where` operation in the chain will delete all records.
 
 ```swift
-public protocol DeleteAble: TableProtocol {
+public protocol Deleteable: TableProtocol {
 	func delete() throws -> Delete<OverAllForm, Self>
 }
 ```
@@ -918,7 +953,7 @@ assert(j2.count == 0)
 <a name="select">Select</a> returns an object which can be used to iterate over the resulting values.
 
 ```swift
-public protocol SelectAble: TableProtocol {
+public protocol Selectable: TableProtocol {
 	func select() throws -> Select<OverAllForm, Self>
 	func count() throws -> Int
 	func first() throws -> OverAllForm?
@@ -1239,3 +1274,8 @@ public enum CRUDLogDestination {
 ```
 
 Each message can go to multiple destinations. By default, both errors and queries are logged to the console.
+
+<a name="license"></a>
+## License
+
+This project is licensed under the Apache License, Version 2.0 — see [LICENSE](LICENSE) for the full text.
