@@ -1,8 +1,8 @@
 # Perfect CRUD [简体中文](README.zh_CN.md)
 
-**Requires Swift tools version 6.2, macOS 26+ (`.macOS(.v26)`). Zero external SwiftPM dependencies.**
+**Requires Swift tools version 6.2, macOS 12+ (`.macOS(.v12)`). Zero external SwiftPM dependencies.**
 
-This fork (`taplin/Perfect-CRUD`, branch `main`) is part of the [Perfect-Resurrection](https://github.com/taplin) effort to modernize the PerfectlySoft Perfect stack for Swift 6. It is **core, foundational infrastructure**: six other resurrected packages in Perfect-Resurrection depend directly on it — [Perfect-MySQL](https://github.com/taplin/Perfect-MySQL), [Perfect-MariaDB](https://github.com/taplin/Perfect-MariaDB), [Perfect-NIO](https://github.com/taplin/Perfect-NIO), [Perfect-PostgreSQL](https://github.com/taplin/Perfect-PostgreSQL), [Perfect-SQLite](https://github.com/taplin/Perfect-SQLite), and [PerfectTemplate](https://github.com/taplin/PerfectTemplate) — and, through those, the Perfect-Lasso interpreter's FileMaker/MySQL data access. (Perfect-Lasso is a Swift reimplementation of the Lasso language, still in active development and not yet production-ready, though validated against real code from multiple production e-commerce sites.) Within the Perfect-Resurrection monorepo, sibling packages consume this one as a local path-dependency rather than the upstream PerfectlySoft tag; if you are working inside that monorepo, point your `Package.swift` at the local path instead of the URLs below.
+This fork (`taplin/Perfect-CRUD`, branch `main`) is part of the [Perfect-Resurrection](https://github.com/taplin) effort to modernize the PerfectlySoft Perfect stack for Swift 6. It is **core, foundational infrastructure**: six other resurrected packages in Perfect-Resurrection depend directly on it — [Perfect-MySQL](https://github.com/taplin/Perfect-MySQL), [Perfect-MariaDB](https://github.com/taplin/Perfect-MariaDB), [Perfect-NIO](https://github.com/taplin/Perfect-NIO), [Perfect-PostgreSQL](https://github.com/taplin/Perfect-PostgreSQL), [Perfect-SQLite](https://github.com/taplin/Perfect-SQLite), and [PerfectTemplate](https://github.com/taplin/PerfectTemplate) — and, through those, the Perfect-Lasso interpreter's FileMaker/MySQL data access. (Perfect-Lasso is a Swift reimplementation of the Lasso language, still in active development and not yet production-ready, though validated against real code from multiple production e-commerce sites.) Sibling packages in Perfect-Resurrection consume this one via `.package(url: "https://github.com/taplin/Perfect-CRUD.git", branch: "main")` — a plain URL dependency, resolved by SwiftPM automatically; no local path or monorepo checkout is needed.
 
 CRUD is an object-relational mapping (ORM) system for Swift, built on Swift's `Codable` and KeyPath features. CRUD takes `Codable` types and maps them to SQL database tables. CRUD can create tables based on `Codable` types and perform inserts and updates of objects in those tables. CRUD can also perform selects and joins of tables, all in a type-safe manner. The Swift 6 resurrection pass added `Sendable` conformances throughout for strict-concurrency checking (the execution model itself remains fully synchronous — there is no async/await or actor usage in the library) and a new "Dynamic Select" runtime query API (see below) that did not exist in the original PerfectlySoft codebase.
 
@@ -15,8 +15,6 @@ To add PerfectCRUD itself as a dependency:
 ```swift
 dependencies: [
     .package(url: "https://github.com/taplin/Perfect-CRUD.git", branch: "main")
-    // or, inside the Perfect-Resurrection monorepo:
-    // .package(path: "../Perfect-CRUD")
 ],
 targets: [
     .target(name: "MyTarget", dependencies: [
