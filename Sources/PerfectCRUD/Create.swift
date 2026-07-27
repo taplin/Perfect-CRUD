@@ -153,10 +153,23 @@ public struct ForeignKey<Table: Codable, DeleteAction: ForeignKeyActionProvider,
 	}
 }
 
+// Guards all access to `tableStructureCache`, including the full compute-and-cache
+// sequence below, not just the individual dictionary reads/writes. `CRUDTableStructure`
+// recurses into itself on the same thread (via `ForeignKeyWrapper.foreignTableStructure()`
+// and `SubTable.tableStructure()`, for foreign-key references and nested sub-tables), so
+// a non-recursive lock held across that computation would deadlock the first time a model
+// has either. `NSRecursiveLock` permits that same-thread re-entry while still serializing
+// distinct threads across the entire sequence — which also prevents a second thread from
+// observing a `TableStructure` that's been published into the cache but not yet had its
+// `subTables` filled in (the original single-threaded code relies on that ordering to break
+// cycles for self-referential/mutually-referential models).
+private let tableStructureCacheLock = NSRecursiveLock()
 nonisolated(unsafe) private var tableStructureCache: [String:TableStructure] = [:]
 
 // for tests
 public func CRUDClearTableStructureCache() {
+	tableStructureCacheLock.lock()
+	defer { tableStructureCacheLock.unlock() }
 	tableStructureCache.removeAll()
 }
 
@@ -169,6 +182,8 @@ extension Decodable {
 	}
 	static func CRUDTableStructure(columnDecoder: CRUDColumnNameDecoder, primaryKey: PartialKeyPath<Self>? = nil) throws -> TableStructure {
 		let cacheKey = "\(type(of: Self.self))"
+		tableStructureCacheLock.lock()
+		defer { tableStructureCacheLock.unlock() }
 		if let cached = tableStructureCache[cacheKey] {
 			return cached
 		}
