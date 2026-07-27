@@ -63,15 +63,38 @@ public actor DatabaseConnectionPool<C: DatabaseConfigurationProtocol & Sendable>
 	/// `Database<C>` must itself be `Sendable` to cross the actor boundary
 	/// -- that's a documented convention, not an enforced guarantee.
 	public func withConnection<T: Sendable>(_ body: @Sendable (Database<C>) async throws -> T) async throws -> T {
-		let connection = try await acquire()
+		let connection = try await acquireInternal()
 		do {
 			let result = try await body(Database(configuration: connection))
-			await release(connection)
+			releaseInternal(connection)
 			return result
 		} catch {
-			await release(connection)
+			releaseInternal(connection)
 			throw error
 		}
+	}
+
+	/// Manual acquire/release pair, for callers who can't use `withConnection`
+	/// because the value they need to pass through isn't `Sendable` -- e.g.
+	/// PerfectNIOCRUD's pooled route overloads, where `OutType`/`NewOut` can be
+	/// `HTTPRequest` (a non-`Sendable` protocol existential in the common case
+	/// of pooling directly on `root()`). Only `C` (already `Sendable`) crosses
+	/// the actor boundary here, not whatever the caller does with it.
+	///
+	/// This is a strictly weaker guarantee than `withConnection` -- nothing
+	/// enforces that `release(_:)` is actually called, or called exactly once,
+	/// or with the same connection that was acquired. Callers must release in
+	/// every exit path (success, throw, cancellation), matching the `do`/
+	/// `catch` shape `withConnection` does automatically. Prefer
+	/// `withConnection` whenever the body's inputs/outputs are `Sendable`.
+	public func acquire() async throws -> C {
+		try await acquireInternal()
+	}
+
+	/// Companion to `acquire()` -- see its documentation for the caller
+	/// obligations this doesn't enforce.
+	public func release(_ connection: C) {
+		releaseInternal(connection)
 	}
 
 	public var currentSize: Int { createdCount }
@@ -108,7 +131,7 @@ public actor DatabaseConnectionPool<C: DatabaseConfigurationProtocol & Sendable>
 		}
 	}
 
-	private func acquire() async throws -> C {
+	private func acquireInternal() async throws -> C {
 		if let existing = available.popLast() {
 			return existing
 		}
@@ -136,7 +159,7 @@ public actor DatabaseConnectionPool<C: DatabaseConfigurationProtocol & Sendable>
 		}
 	}
 
-	private func release(_ connection: C) {
+	private func releaseInternal(_ connection: C) {
 		while let id = waiterOrder.first {
 			waiterOrder.removeFirst()
 			guard case .pending(let continuation) = waiters[id] else {
