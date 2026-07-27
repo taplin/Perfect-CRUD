@@ -4,6 +4,37 @@
 **Date:** 2026-07-26
 **Companion to:** [adr-0001-orm-roadmap-vs-rewrite.md](adr-0001-orm-roadmap-vs-rewrite.md)
 
+## Implementation note (added after Phase 2 was built)
+
+Phase 2's design called for overloading async methods by the same name as
+their sync counterparts (`sql`, `transaction`, `first`, `insert`, `update`,
+`delete`), resolved by call-site `await` presence. **Verified wrong by
+direct testing against the actual toolchain**: an isolated minimal
+reproduction showed that once an `async` overload exists anywhere in scope
+with the same name, Swift requires `await` even for an unrelated sync call
+with no `await` written — it does not reliably fall back to the sync
+candidate. This would have broken every existing sync call site inside an
+already-`async` closure, which is exactly what `PerfectNIOCRUD` route
+handlers are (`Routes.db()`'s `call` closures are `async throws`). As
+implemented, every async method with a sync counterpart is suffixed
+`Async` (`sqlAsync`, `transactionAsync`, `firstAsync`, `insertAsync`,
+`updateAsync`, `deleteAsync`) instead. `fetchAll()` has no sync twin, so it
+keeps its plain name. See `AsyncExecution.swift`'s header comment for the
+full account.
+
+A second real bug was caught by a failing test, not by inspection:
+`SQLGenDelegate.setIsolationLevelSQL` was originally added as a bare
+protocol extension with no corresponding protocol requirement — meaning a
+conformer's own override was silently unreachable through the `any
+SQLGenDelegate` existential `Database`/`Table` actually hold (extension-only
+methods dispatch statically to the declared type, not the dynamic one).
+Fixed by adding it as a real requirement with a default implementation,
+matching the pre-existing `getEmptyInsertSnippet()` pattern in the same
+protocol. Worth flagging as a general lesson for any future protocol
+extension meant to be an override point: it must be declared in the
+protocol body, not just added via `extension`, or dynamic dispatch through
+an existential silently no-ops.
+
 ## Review summary
 
 Three expert passes reviewed this plan before implementation: a Swift-concurrency-correctness review, a Swift-testing-strategy review, and an ecosystem-compatibility review that verified claims against the real dependent packages. Their findings are folded in below, with the most consequential one first: **the `tableStructureCache` race isn't a Phase 5 risk — it's a live bug today**, independently flagged by both the concurrency reviewer (reasoning from the code) and the ecosystem reviewer (who found a concrete, unauthenticated, concurrently-reachable trigger in `PerfectTemplate`). Two other must-fix findings reshaped Phase 1 and Phase 2's designs; all are addressed in place below rather than kept as a separate errata list.
