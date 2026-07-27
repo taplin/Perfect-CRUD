@@ -174,13 +174,13 @@ public func CRUDClearTableStructureCache() {
 }
 
 extension Decodable {
-	static func CRUDTableStructure(primaryKey: PartialKeyPath<Self>? = nil) throws -> TableStructure {
+	public static func CRUDTableStructure(primaryKey: PartialKeyPath<Self>? = nil) throws -> TableStructure {
 		let columnDecoder = CRUDColumnNameDecoder()
 		columnDecoder.tableNamePath.append("\(Self.CRUDTableName)")
 		_ = try Self.init(from: columnDecoder)
 		return try CRUDTableStructure(columnDecoder: columnDecoder, primaryKey: primaryKey)
 	}
-	static func CRUDTableStructure(columnDecoder: CRUDColumnNameDecoder, primaryKey: PartialKeyPath<Self>? = nil) throws -> TableStructure {
+	public static func CRUDTableStructure(columnDecoder: CRUDColumnNameDecoder, primaryKey: PartialKeyPath<Self>? = nil) throws -> TableStructure {
 		let cacheKey = "\(type(of: Self.self))"
 		tableStructureCacheLock.lock()
 		defer { tableStructureCacheLock.unlock() }
