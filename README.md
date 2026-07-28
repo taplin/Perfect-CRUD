@@ -52,6 +52,9 @@ CRUD support is built directly into each of these database connector packages.
 		* <a href="#table">Table</a>
 		* <a href="#sql">SQL</a>
 		* <a href="#dynamic-select">Dynamic Select</a>
+		* <a href="#connection-pooling">Connection Pooling</a>
+		* <a href="#async-execution">Async Execution</a>
+		* <a href="#migrations">Migrations</a>
 	* <a href="#table-1">Table</a>
 		* <a href="#index">Index</a>
 	* <a href="#join">Join</a>
@@ -342,6 +345,83 @@ func nextDynamicRow() throws -> DynamicRow?
 ```
 
 The default implementation throws, so connectors opt in explicitly.
+
+<a name="connection-pooling"></a>
+#### Connection Pooling
+
+`DatabaseConnectionPool<C>` maintains a pool of connections for a given `DatabaseConfigurationProtocol`, checked out for the duration of a unit of work and returned automatically afterward.
+
+```swift
+let pool = try DatabaseConnectionPool(
+    configuration: .init(minConnections: 1, maxConnections: 5),
+    makeConnection: { try MySQLDatabaseConfiguration(database: "mydb", host: "localhost") }
+)
+try await pool.prewarm() // optional: opens minConnections up front instead of on first use
+
+// Safe, high-level API: checks a connection out, runs body, always checks it back in
+// (even on throw or task cancellation).
+let people = try await pool.withConnection { db in
+    try db.table(Person.self).select().map { $0 }
+}
+```
+
+`withConnection(_:)`'s body closure must be `Sendable`, along with everything it captures and returns — if that's too restrictive for a particular call site (e.g. building a route handler where the surrounding value isn't `Sendable`), use the manual pairing instead:
+
+```swift
+let connection = try await pool.acquire()
+defer { Task { await pool.release(connection) } } // release in every exit path — see below
+let db = Database(configuration: connection)
+// ... use db ...
+```
+
+Nothing enforces that `release(_:)` is actually called exactly once with the connection that was acquired — `withConnection(_:)` is the safer default; only reach for manual acquire/release when a genuine `Sendable` constraint forces it (this is exactly why `PerfectNIOCRUD`'s `Routes.db(pool:)`/`.table(pool:)` route overloads use the manual pair internally instead of `withConnection`).
+
+<a name="async-execution"></a>
+#### Async Execution
+
+CRUD's synchronous API (`select()`, `insert()`, `sql()`, etc.) is still the primary surface, and connector work is always blocking under the hood — there is no async I/O in libmysqlclient/libpq/sqlite3. Calling it directly from inside an `async` function (a PerfectNIO route handler, for example) blocks whatever thread is running that task, which must never happen on Swift's cooperative thread pool.
+
+A parallel family of `Async`-suffixed methods routes that same blocking work through a dedicated executor instead:
+
+```swift
+try await db.sqlAsync("DELETE FROM sessions WHERE expires_at < NOW()")
+let user = try await table.firstAsync()
+try await table.insertAsync(newUser)
+try await table.updateAsync(updatedUser)
+try await table.deleteAsync()
+let all = try await table.fetchAll() // no sync equivalent to collide with, so no "Async" suffix
+try await db.transactionAsync { try /* ...synchronous CRUD calls... */ }
+```
+
+These are suffixed rather than plain overloads of the existing sync method names — an identically-named `async` overload anywhere in scope forces `await` at every call site even for a logically-unrelated sync call, which would have silently broken every existing synchronous call inside an already-`async` context. Reach for the `Async` versions specifically when you're calling CRUD from inside `async` code; the plain synchronous API is unchanged and still correct to use from a synchronous context (a CLI tool, a script, a background thread you already own).
+
+<a name="migrations"></a>
+#### Migrations
+
+`DatabaseMigrator<C>` is a versioned migration system layered on top of (not replacing) `TableCreatePolicy.reconcileTable` — an individual migration is free to call `db.create(_:policy: .reconcileTable)` for a simple additive column change, or drop to `db.sql("ALTER TABLE ...")` for anything `reconcileTable` can't express.
+
+```swift
+let migrator = DatabaseMigrator<MySQLDatabaseConfiguration>()
+
+try migrator.register("2026_07_create_posts", up: { db in
+    try db.create(Post.self, policy: .shallow)
+}, down: { db in
+    try db.sql("DROP TABLE IF EXISTS \(Post.CRUDTableName)")
+})
+
+try migrator.register("2026_08_add_posts_published_flag", up: { db in
+    try db.sql("ALTER TABLE \(Post.CRUDTableName) ADD COLUMN published INTEGER DEFAULT 0")
+})
+// register every migration once, at startup, before calling migrate(_:)
+
+try migrator.migrate(db)       // applies every registered migration not yet recorded, in
+                                // registration order (not a lexical/timestamp sort on the
+                                // identifier), each inside its own transaction
+try migrator.rollbackLast(db)  // rolls back only the most recently applied migration; throws
+                                // if it has no `down` — a reverse is never auto-inferred
+```
+
+A migration's `identifier` must be unique — `register` throws if it's already registered, since migrations are meant to be a fixed, reviewed sequence rather than silently overwritable. Applied migrations are tracked in a `perfectcrud_migrations` table, created automatically on first `migrate(_:)` call. Running `migrate(_:)` concurrently from every instance of a horizontally-scaled service against one shared network database is not safe — run it from exactly one process/deploy step for a network connector (SQLite's single-writer semantics make this less of a concern there).
 
 <a name="table-1"></a>
 ### Table
