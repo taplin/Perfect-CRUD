@@ -1,20 +1,27 @@
-# Perfect CRUD [简体中文](README.zh_CN.md)
+# Perfect CRUD
 
-**Requires Swift tools version 6.2, macOS 12+ (`.macOS(.v12)`). Zero external SwiftPM dependencies.**
+<p align="center">
+    <img src="https://img.shields.io/badge/Swift-6.2-orange.svg?style=flat" alt="Swift 6.2">
+    <img src="https://img.shields.io/badge/Platforms-macOS%2012%2B-lightgray.svg?style=flat" alt="Platforms macOS 12+">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-lightgrey.svg?style=flat" alt="License Apache 2.0"></a>
+</p>
 
-This fork (`taplin/Perfect-CRUD`, branch `main`) is part of the [Perfect-Resurrection](https://github.com/taplin) effort to modernize the PerfectlySoft Perfect stack for Swift 6. It is **core, foundational infrastructure**: six other resurrected packages in Perfect-Resurrection depend directly on it — [Perfect-MySQL](https://github.com/taplin/Perfect-MySQL), [Perfect-MariaDB](https://github.com/taplin/Perfect-MariaDB), [Perfect-NIO](https://github.com/taplin/Perfect-NIO), [Perfect-PostgreSQL](https://github.com/taplin/Perfect-PostgreSQL), [Perfect-SQLite](https://github.com/taplin/Perfect-SQLite), and [PerfectTemplate](https://github.com/taplin/PerfectTemplate) — and, through those, the Perfect-Lasso interpreter's FileMaker/MySQL data access. (Perfect-Lasso is a Swift reimplementation of the Lasso language, still in active development and not yet production-ready, though validated against real code from multiple production e-commerce sites.) Sibling packages in Perfect-Resurrection consume this one via `.package(url: "https://github.com/taplin/Perfect-CRUD.git", branch: "main")` — a plain URL dependency, resolved by SwiftPM automatically; no local path or monorepo checkout is needed.
+CRUD is an object-relational mapping (ORM) system for Swift, built on Swift's `Codable` and KeyPath
+features. It maps `Codable` types to SQL tables, and can create tables, insert, update, select, and
+join, all in a type-safe manner — no additional dependencies, generics and KeyPaths catch misuse at
+compile time.
 
-CRUD is an object-relational mapping (ORM) system for Swift, built on Swift's `Codable` and KeyPath features. CRUD takes `Codable` types and maps them to SQL database tables. CRUD can create tables based on `Codable` types and perform inserts and updates of objects in those tables. CRUD can also perform selects and joins of tables, all in a type-safe manner. The Swift 6 resurrection pass added `Sendable` conformances throughout for strict-concurrency checking (the execution model itself remains fully synchronous — there is no async/await or actor usage in the library) and a new "Dynamic Select" runtime query API (see below) that did not exist in the original PerfectlySoft codebase.
+**This package has been modernized for Swift 6**: `Sendable` conformance throughout for strict
+concurrency, plus a new "Dynamic Select" runtime query API. It's foundational — [Perfect-MySQL](https://github.com/PerfectlySoft/Perfect-MySQL),
+[Perfect-MariaDB](https://github.com/PerfectlySoft/Perfect-MariaDB), [Perfect-PostgreSQL](https://github.com/PerfectlySoft/Perfect-PostgreSQL),
+[Perfect-SQLite](https://github.com/PerfectlySoft/Perfect-SQLite), [Perfect-NIO](https://github.com/PerfectlySoft/Perfect-NIO),
+and [PerfectTemplate](https://github.com/PerfectlySoft/PerfectTemplate) all depend on it directly.
 
-CRUD uses a simple, expressive, and type safe methodology for constructing queries as a series of operations. It is designed to be light-weight and has zero additional dependencies. It uses generics, KeyPaths and Codables to ensure as much misuse as possible is caught at compile time.
-
-Database client library packages add CRUD support by implementing a few protocols. Within Perfect-Resurrection, that support is implemented by the local forks [Perfect-SQLite](https://github.com/taplin/Perfect-SQLite), [Perfect-PostgreSQL](https://github.com/taplin/Perfect-PostgreSQL), [Perfect-MySQL](https://github.com/taplin/Perfect-MySQL), and [Perfect-MariaDB](https://github.com/taplin/Perfect-MariaDB) — these are Swift 6-migrated forks of the original PerfectlySoft connector packages, not the unmaintained upstream originals.
-
-To add PerfectCRUD itself as a dependency:
+The pre-Swift-6 version of this package is preserved on the [`legacy`](../../tree/legacy) branch.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/taplin/Perfect-CRUD.git", branch: "main")
+    .package(url: "https://github.com/PerfectlySoft/Perfect-CRUD.git", branch: "main")
 ],
 targets: [
     .target(name: "MyTarget", dependencies: [
@@ -25,22 +32,16 @@ targets: [
 
 Then build and test with the standard SwiftPM commands: `swift build`, `swift test`.
 
-To use CRUD with a specific database, include the connector of your choice as a dependency in your Package.swift file. For example, using the Perfect-Resurrection forks:
+To use CRUD with a specific database, add the connector of your choice:
 
 ```swift
-// postgres
-.package(url: "https://github.com/taplin/Perfect-PostgreSQL.git", branch: "main")
-// mysql
-.package(url: "https://github.com/taplin/Perfect-MySQL.git", branch: "main")
-// mariadb
-.package(url: "https://github.com/taplin/Perfect-MariaDB.git", branch: "main")
-// sqlite
-.package(url: "https://github.com/taplin/Perfect-SQLite.git", branch: "main")
+.package(url: "https://github.com/PerfectlySoft/Perfect-PostgreSQL.git", branch: "main")
+.package(url: "https://github.com/PerfectlySoft/Perfect-MySQL.git", branch: "main")
+.package(url: "https://github.com/PerfectlySoft/Perfect-MariaDB.git", branch: "main")
+.package(url: "https://github.com/PerfectlySoft/Perfect-SQLite.git", branch: "main")
 ```
 
-The original, unmaintained upstream packages (pre-Swift-6, PerfectlySoft org) are still reachable at `https://github.com/PerfectlySoft/Perfect-{PostgreSQL,MySQL,SQLite}` but are not what this fork or its Perfect-Resurrection siblings build against.
-
-CRUD support is built directly into each of these database connector packages.
+CRUD support is built directly into each connector package.
 
 # Contents
 * <a href="#general-usage">General Usage</a>
